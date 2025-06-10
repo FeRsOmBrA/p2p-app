@@ -1,0 +1,9 @@
+node_modules
+npm-debug.log
+expo-debug.log
+*.expo
+/backend/node_modules
+/mobile/node_modules
+.env
+**/.env
+backend/prisma/*.db
