@@ -4,11 +4,24 @@ const jwt = require('jsonwebtoken');
 const { PrismaClient } = require('@prisma/client');
 const speakeasy = require('speakeasy');
 const dotenv = require('dotenv');
+const http = require('http');
+const WebSocket = require('ws');
 
 dotenv.config();
 const prisma = new PrismaClient();
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+
+function broadcast(event, data) {
+  wss.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify({ event, data }));
+    }
+  });
+}
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
 
 app.use(express.json());
@@ -81,7 +94,41 @@ app.post('/api/products', auth, async (req, res) => {
   const product = await prisma.product.create({
     data: { name, price, description, userId: req.userId },
   });
+  broadcast('product', product);
   res.json(product);
+});
+
+app.get('/api/products/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  const product = await prisma.product.findUnique({ where: { id } });
+  if (!product) return res.status(404).json({ error: 'Not found' });
+  res.json(product);
+});
+
+app.put('/api/products/:id', auth, async (req, res) => {
+  const id = Number(req.params.id);
+  const { name, price, description } = req.body;
+  const product = await prisma.product.findUnique({ where: { id } });
+  if (!product || product.userId !== req.userId) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  const updated = await prisma.product.update({
+    where: { id },
+    data: { name, price, description },
+  });
+  broadcast('product', updated);
+  res.json(updated);
+});
+
+app.delete('/api/products/:id', auth, async (req, res) => {
+  const id = Number(req.params.id);
+  const product = await prisma.product.findUnique({ where: { id } });
+  if (!product || product.userId !== req.userId) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  await prisma.product.delete({ where: { id } });
+  broadcast('product-delete', { id });
+  res.json({ success: true });
 });
 
 app.get('/api/transactions', auth, async (req, res) => {
@@ -109,12 +156,37 @@ app.post('/api/transactions', auth, async (req, res) => {
         amount,
       },
     });
+    broadcast('transaction', tx);
     res.json(tx);
   } catch (err) {
     res.status(400).json({ error: 'Unable to create transaction' });
   }
 });
 
-app.listen(PORT, () => {
+app.get('/api/transactions/:id', auth, async (req, res) => {
+  const id = Number(req.params.id);
+  const tx = await prisma.transaction.findUnique({
+    where: { id },
+    include: { from: true, to: true, product: true },
+  });
+  if (!tx || (tx.fromUserId !== req.userId && tx.toUserId !== req.userId)) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  res.json(tx);
+});
+
+app.patch('/api/transactions/:id', auth, async (req, res) => {
+  const id = Number(req.params.id);
+  const { status } = req.body;
+  const tx = await prisma.transaction.findUnique({ where: { id } });
+  if (!tx || (tx.fromUserId !== req.userId && tx.toUserId !== req.userId)) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  const updated = await prisma.transaction.update({ where: { id }, data: { status } });
+  broadcast('transaction', updated);
+  res.json(updated);
+});
+
+server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

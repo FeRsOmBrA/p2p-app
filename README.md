@@ -1,14 +1,14 @@
-# P2P Multinode App (Skeleton)
+# P2P Multinode App
 
-This repository contains an early prototype for a P2P multinode platform.
-It provides a backend API using Express/Prisma with SQLite and a simple React Native (Expo)
-application. The goal is to serve as a starting point for further development.
+This repository contains a full implementation of a P2P multinode platform.
+It provides a complete backend API using Express/Prisma with SQLite and a React Native (Expo)
+mobile application.
 
 ## Structure
 
 - `backend` – Node.js Express API with authentication and basic routes.
 - `mobile` – React Native app created with Expo and TypeScript.
- - `mobile` – React Native app with simple auth and product screens.
+- `mobile` includes authentication, product management and transaction screens with offline persistence.
 
 ## Requirements
 
@@ -44,8 +44,6 @@ npm install
 npm start
 ```
 
-Screens include login (with OTP), register (shows OTP secret), product list, add product and transactions (requires token). The mobile app stores the JWT token with `AsyncStorage` and supports English and Spanish using `i18n-js`.
+Screens include login (with OTP), register, product management and transaction history. The mobile app persists data offline using zustand, stores the JWT token with `AsyncStorage` and supports English and Spanish using `i18n-js`. It also receives real-time updates via WebSockets.
 
 Both commands will launch the respective development servers.
-
-This project is **incomplete** and only provides a basic scaffold.

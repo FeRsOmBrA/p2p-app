@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
+import create from 'zustand';
+import { persist } from 'zustand/middleware';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, Text, TextInput, Button, Alert, FlatList } from 'react-native';
@@ -46,6 +48,25 @@ type Transaction = {
   status: string;
 };
 
+type Store = {
+  products: Product[];
+  transactions: Transaction[];
+  setProducts: (p: Product[]) => void;
+  setTransactions: (t: Transaction[]) => void;
+};
+
+const useStore = create<Store>()(
+  persist(
+    (set) => ({
+      products: [],
+      transactions: [],
+      setProducts: (products) => set({ products }),
+      setTransactions: (transactions) => set({ transactions }),
+    }),
+    { name: 'p2p-data' }
+  )
+);
+
 type TokenState = { token: string | null; setToken: (t: string | null) => void };
 const TokenContext = React.createContext<TokenState>({ token: null, setToken: () => {} });
 
@@ -64,6 +85,30 @@ export default function App() {
       AsyncStorage.removeItem('token');
     }
   }, [token]);
+
+  useEffect(() => {
+    const ws = new WebSocket('ws://localhost:3000');
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      const state = useStore.getState();
+      if (msg.event === 'product') {
+        const idx = state.products.findIndex(p => p.id === msg.data.id);
+        const products = idx === -1
+          ? [...state.products, msg.data]
+          : state.products.map(p => (p.id === msg.data.id ? msg.data : p));
+        state.setProducts(products);
+      } else if (msg.event === 'product-delete') {
+        state.setProducts(state.products.filter(p => p.id !== msg.data.id));
+      } else if (msg.event === 'transaction') {
+        const idx = state.transactions.findIndex(t => t.id === msg.data.id);
+        const txs = idx === -1
+          ? [msg.data, ...state.transactions]
+          : state.transactions.map(t => (t.id === msg.data.id ? msg.data : t));
+        state.setTransactions(txs);
+      }
+    };
+    return () => ws.close();
+  }, []);
 
   return (
     <TokenContext.Provider value={{ token, setToken }}>
@@ -172,7 +217,7 @@ function RegisterScreen() {
 
 function ProductsScreen({ navigation }: any) {
   const { token } = useContext(TokenContext);
-  const [products, setProducts] = useState<Product[]>([]);
+  const { products, setProducts } = useStore();
 
   useEffect(() => {
     fetch(`${API_URL}/products`)
@@ -202,6 +247,7 @@ function ProductsScreen({ navigation }: any) {
 
 function AddProductScreen({ navigation }: any) {
   const { token } = useContext(TokenContext);
+  const { products, setProducts } = useStore();
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
@@ -217,6 +263,8 @@ function AddProductScreen({ navigation }: any) {
       body: JSON.stringify({ name, price: Number(price), description }),
     });
     if (res.ok) {
+      const product = await res.json();
+      setProducts([...products, product]);
       navigation.goBack();
     } else {
       Alert.alert('Error', 'Unable to save');
@@ -238,7 +286,7 @@ function AddProductScreen({ navigation }: any) {
 
 function TransactionsScreen({ navigation }: any) {
   const { token } = useContext(TokenContext);
-  const [txs, setTxs] = useState<Transaction[]>([]);
+  const { transactions: txs, setTransactions } = useStore();
 
   useEffect(() => {
     if (!token) return;
@@ -246,7 +294,7 @@ function TransactionsScreen({ navigation }: any) {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(res => res.json())
-      .then(setTxs)
+      .then(setTransactions)
       .catch(() => {});
   }, [token]);
 
@@ -270,6 +318,7 @@ function TransactionsScreen({ navigation }: any) {
 
 function AddTransactionScreen({ navigation }: any) {
   const { token } = useContext(TokenContext);
+  const { transactions, setTransactions } = useStore();
   const [toUserId, setToUserId] = useState('');
   const [amount, setAmount] = useState('');
 
@@ -284,6 +333,8 @@ function AddTransactionScreen({ navigation }: any) {
       body: JSON.stringify({ toUserId: Number(toUserId), amount: Number(amount) }),
     });
     if (res.ok) {
+      const tx = await res.json();
+      setTransactions([tx, ...transactions]);
       navigation.goBack();
     } else {
       Alert.alert('Error', 'Unable to save');
